@@ -1,0 +1,9 @@
+{
+  "name": "moonrise",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "check": "node --check public/experiences/galaxy/sketch.js",
+    "dev": "python3 -m http.server 4175"
+  }
+}
