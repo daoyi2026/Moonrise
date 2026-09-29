@@ -120,10 +120,17 @@ function configureMobilePage(){
   document.body.style.margin="0";
   document.body.style.padding="0";
 
-  document.body.style.overflowX="hidden";
-  document.body.style.overflowY="auto";
+  const pageW=Math.max(1,window.innerWidth||390);
+  const pageH=Math.max(1,window.innerHeight||844);
+  const phoneLikePage=(pageH>=pageW && pageW<=900);
 
-  document.body.style.touchAction="pan-y";
+  document.documentElement.style.overflowX="hidden";
+  document.documentElement.style.overflowY=phoneLikePage ? "auto" : "hidden";
+
+  document.body.style.overflowX="hidden";
+  document.body.style.overflowY=phoneLikePage ? "auto" : "hidden";
+
+  document.body.style.touchAction=phoneLikePage ? "pan-y" : "none";
   document.body.style.background="rgb(2,10,27)";
 }
 
