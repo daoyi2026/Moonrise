@@ -2,6 +2,7 @@
   const SOUNDTRACK_VOLUME = 0.82;
   const SYNC_THRESHOLD_SECONDS = 0.14;
   const START_RETRY_DELAY_MS = 120;
+  const EMBEDDED = window.parent !== window;
 
   const scriptUrl = new URL(document.currentScript.src, window.location.href);
   const soundtrackUrl = new URL("./audio/moonrise.m4a", scriptUrl);
@@ -9,7 +10,7 @@
   const soundtrack = new Audio();
   soundtrack.src = soundtrackUrl.href;
   soundtrack.preload = "auto";
-  soundtrack.autoplay = true;
+  soundtrack.autoplay = !EMBEDDED;
   soundtrack.loop = false;
   soundtrack.volume = SOUNDTRACK_VOLUME;
   soundtrack.playsInline = true;
@@ -70,7 +71,7 @@
 
   async function startAudioAndAnimationTogether() {
     if (
-      audioEnabled ||
+      (audioEnabled && !soundtrack.paused) ||
       startInFlight ||
       !sceneIsReady()
     ) {
@@ -86,6 +87,7 @@
       await soundtrack.play();
 
       audioEnabled = true;
+      if (typeof window.loop === "function") window.loop();
 
       // If the picture was already moving while the browser decided whether
       // audio could autoplay, restart the ORIGINAL visual clock now so sound
@@ -127,6 +129,25 @@
     startAudioAndAnimationTogether();
   }
 
+  function pauseAudio() {
+    soundtrack.pause();
+    audioEnabled = false;
+    setAudioToZero();
+    if (EMBEDDED && typeof window.noLoop === "function") window.noLoop();
+  }
+
+  window.__moonriseStartAudio = startAudioAndAnimationTogether;
+  window.__moonrisePauseAudio = pauseAudio;
+
+  window.addEventListener("message", (event) => {
+    if (!EMBEDDED || event.source !== window.parent) return;
+    if (event.data === "galaxy-play") {
+      startAudioAndAnimationTogether();
+    } else if (event.data === "galaxy-pause") {
+      pauseAudio();
+    }
+  });
+
   // Keep the artwork visually untouched. These listeners are only a silent
   // fallback for browsers that reject the initial audible autoplay attempt.
   window.addEventListener("pointerdown", handleUserGesture, { passive: true });
@@ -141,13 +162,16 @@
     sceneReady = true;
     window.clearInterval(readyTimer);
 
-    // Best-effort audible autoplay on page open.
+    // Standalone visits retain the original best-effort autoplay. Embedded
+    // visits wait for the room's window click so no hidden preload can begin
+    // playing before the visitor actually enters the galaxy.
     autoplayAttempted = true;
     soundtrack.load();
-
-    window.setTimeout(() => {
-      startAudioAndAnimationTogether();
-    }, START_RETRY_DELAY_MS);
+    if (!EMBEDDED) {
+      window.setTimeout(() => {
+        startAudioAndAnimationTogether();
+      }, START_RETRY_DELAY_MS);
+    }
   }, 50);
 
   soundtrack.addEventListener("playing", () => {

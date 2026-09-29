@@ -115,27 +115,29 @@ function configureMobilePage(){
 
   document.documentElement.style.margin="0";
   document.documentElement.style.padding="0";
+  document.documentElement.style.width="100%";
+  document.documentElement.style.height="100%";
+  document.documentElement.style.overflow="hidden";
   document.documentElement.style.background="rgb(2,10,27)";
 
   document.body.style.margin="0";
   document.body.style.padding="0";
 
-  const pageW=Math.max(1,window.innerWidth||390);
-  const pageH=Math.max(1,window.innerHeight||844);
-  const phoneLikePage=(pageH>=pageW && pageW<=900);
+  document.body.style.width="100%";
+  document.body.style.height="100%";
+  document.body.style.overflow="hidden";
 
-  document.documentElement.style.overflowX="hidden";
-  document.documentElement.style.overflowY=phoneLikePage ? "auto" : "hidden";
-
-  document.body.style.overflowX="hidden";
-  document.body.style.overflowY=phoneLikePage ? "auto" : "hidden";
-
-  document.body.style.touchAction=phoneLikePage ? "pan-y" : "none";
+  document.body.style.touchAction="none";
   document.body.style.background="rgb(2,10,27)";
 }
 
 
 function getViewportSize(){
+
+  const visualViewport=
+    typeof window!=="undefined"
+      ? window.visualViewport
+      : null;
 
   const viewportW=
     Math.max(
@@ -143,6 +145,7 @@ function getViewportSize(){
       Math.round(
         (
           typeof window!=="undefined" &&
+          (visualViewport && visualViewport.width) ||
           window.innerWidth
         ) ||
         390
@@ -155,6 +158,7 @@ function getViewportSize(){
       Math.round(
         (
           typeof window!=="undefined" &&
+          (visualViewport && visualViewport.height) ||
           window.innerHeight
         ) ||
         844
@@ -169,26 +173,6 @@ function getViewportSize(){
 
 
 function getCanvasSize(viewport){
-
-  const portraitNow=
-    viewport.h>=viewport.w;
-
-  const phoneLike=
-    portraitNow &&
-    viewport.w<=900;
-
-  if(phoneLike){
-
-    return{
-      w:viewport.w,
-
-      // 手机竖屏固定 1 : 2
-      h:Math.round(
-        viewport.w*2
-      )
-    };
-  }
-
   return{
     w:viewport.w,
     h:viewport.h
@@ -236,7 +220,7 @@ function setup(){
     "100vw";
 
   mainCanvas.elt.style.touchAction=
-    "pan-y";
+    "none";
 
   pixelDensity(1);
 
