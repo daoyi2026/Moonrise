@@ -1,12 +1,15 @@
 (() => {
   const SOUNDTRACK_VOLUME = 0.82;
   const SYNC_THRESHOLD_SECONDS = 0.14;
+  const START_RETRY_DELAY_MS = 120;
 
   const scriptUrl = new URL(document.currentScript.src, window.location.href);
   const soundtrackUrl = new URL("./audio/moonrise.m4a", scriptUrl);
 
-  const soundtrack = new Audio(soundtrackUrl.href);
+  const soundtrack = new Audio();
+  soundtrack.src = soundtrackUrl.href;
   soundtrack.preload = "auto";
+  soundtrack.autoplay = true;
   soundtrack.loop = false;
   soundtrack.volume = SOUNDTRACK_VOLUME;
   soundtrack.playsInline = true;
@@ -14,8 +17,20 @@
   let audioEnabled = false;
   let startInFlight = false;
   let sceneReady = false;
+  let autoplayAttempted = false;
 
   window.__moonriseAudio = soundtrack;
+  window.__moonriseAudioState = {
+    get enabled() {
+      return audioEnabled;
+    },
+    get ready() {
+      return sceneReady;
+    },
+    get paused() {
+      return soundtrack.paused;
+    },
+  };
 
   const originalResetScene =
     typeof window.resetScene === "function"
@@ -29,66 +44,20 @@
     );
   }
 
-  function makeSoundPrompt() {
-    if (document.getElementById("moonrise-sound-prompt")) return;
-
-    const prompt = document.createElement("button");
-    prompt.id = "moonrise-sound-prompt";
-    prompt.type = "button";
-    prompt.setAttribute("aria-label", "开启背景音乐");
-    prompt.textContent = "点击开启声音";
-
-    Object.assign(prompt.style, {
-      position: "fixed",
-      left: "50%",
-      bottom: "max(22px, env(safe-area-inset-bottom))",
-      transform: "translateX(-50%)",
-      zIndex: "9999",
-      padding: "9px 14px",
-      border: "1px solid rgba(255,255,255,.30)",
-      borderRadius: "999px",
-      background: "rgba(2,10,27,.34)",
-      color: "rgba(255,255,255,.88)",
-      backdropFilter: "blur(10px)",
-      WebkitBackdropFilter: "blur(10px)",
-      font: "400 13px/1 system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-      letterSpacing: ".08em",
-      cursor: "pointer",
-      boxShadow: "0 6px 22px rgba(0,0,0,.12)",
-      opacity: "0",
-      transition: "opacity .35s ease",
-    });
-
-    document.body.appendChild(prompt);
-
-    requestAnimationFrame(() => {
-      prompt.style.opacity = "1";
-    });
-  }
-
-  function removeSoundPrompt() {
-    const prompt = document.getElementById("moonrise-sound-prompt");
-    if (!prompt) return;
-
-    prompt.style.opacity = "0";
-    window.setTimeout(() => {
-      prompt.remove();
-    }, 360);
+  function setAudioToZero() {
+    try {
+      soundtrack.currentTime = 0;
+    } catch (_) {}
   }
 
   function restartAudioFromZero() {
     if (!audioEnabled) return;
 
-    try {
-      soundtrack.currentTime = 0;
-    } catch (_) {}
+    setAudioToZero();
 
-    if (soundtrack.paused) {
-      soundtrack.play().catch(() => {
-        audioEnabled = false;
-        makeSoundPrompt();
-      });
-    }
+    soundtrack.play().catch(() => {
+      audioEnabled = false;
+    });
   }
 
   if (originalResetScene) {
@@ -100,57 +69,69 @@
   }
 
   async function startAudioAndAnimationTogether() {
-    if (audioEnabled || startInFlight || !sceneIsReady()) {
-      return;
+    if (
+      audioEnabled ||
+      startInFlight ||
+      !sceneIsReady()
+    ) {
+      return false;
     }
 
     startInFlight = true;
 
     try {
-      soundtrack.currentTime = 0;
       soundtrack.volume = SOUNDTRACK_VOLUME;
+      setAudioToZero();
 
       await soundtrack.play();
 
       audioEnabled = true;
-      removeSoundPrompt();
 
-      // The visual may already have been running while autoplay was blocked.
-      // Restart the original scene once so picture and soundtrack both begin at 0.
+      // If the picture was already moving while the browser decided whether
+      // audio could autoplay, restart the ORIGINAL visual clock now so sound
+      // and picture begin together from exactly 0.
       if (originalResetScene) {
         originalResetScene();
       }
 
-      soundtrack.currentTime = 0;
+      setAudioToZero();
 
       if (soundtrack.paused) {
         await soundtrack.play();
       }
+
+      return true;
     } catch (_) {
+      // Expected on browsers that block audible autoplay.
+      // Stay visually clean: no button or overlay is shown.
+      // The first natural user gesture anywhere on the experience retries.
       audioEnabled = false;
-      makeSoundPrompt();
+      return false;
     } finally {
       startInFlight = false;
     }
   }
 
-  function handleUserGesture(event) {
-    const target = event && event.target;
-
-    if (
+  function isExitControl(target) {
+    return Boolean(
       target &&
       target.closest &&
       target.closest(".experience-exit")
-    ) {
-      return;
-    }
+    );
+  }
+
+  function handleUserGesture(event) {
+    if (audioEnabled || startInFlight || !sceneReady) return;
+    if (isExitControl(event && event.target)) return;
 
     startAudioAndAnimationTogether();
   }
 
-  // Use several gesture types because browser autoplay policies differ.
+  // Keep the artwork visually untouched. These listeners are only a silent
+  // fallback for browsers that reject the initial audible autoplay attempt.
   window.addEventListener("pointerdown", handleUserGesture, { passive: true });
   window.addEventListener("touchstart", handleUserGesture, { passive: true });
+  window.addEventListener("mousedown", handleUserGesture, { passive: true });
   window.addEventListener("click", handleUserGesture);
   window.addEventListener("keydown", handleUserGesture);
 
@@ -160,24 +141,29 @@
     sceneReady = true;
     window.clearInterval(readyTimer);
 
-    // Try autoplay once. If blocked, show an explicit but unobtrusive prompt.
-    startAudioAndAnimationTogether();
+    // Best-effort audible autoplay on page open.
+    autoplayAttempted = true;
+    soundtrack.load();
 
     window.setTimeout(() => {
-      if (!audioEnabled && soundtrack.paused) {
-        makeSoundPrompt();
-      }
-    }, 500);
-  }, 80);
-
-  soundtrack.addEventListener("error", () => {
-    audioEnabled = false;
-    makeSoundPrompt();
-  });
+      startAudioAndAnimationTogether();
+    }, START_RETRY_DELAY_MS);
+  }, 50);
 
   soundtrack.addEventListener("playing", () => {
     audioEnabled = true;
-    removeSoundPrompt();
+  });
+
+  soundtrack.addEventListener("pause", () => {
+    if (
+      sceneReady &&
+      autoplayAttempted &&
+      soundtrack.currentTime > 0 &&
+      soundtrack.currentTime < soundtrack.duration
+    ) {
+      // Do not force playback here; a browser may have intentionally paused it.
+      // The next user gesture will retry if needed.
+    }
   });
 
   function correctDrift(force = false) {
@@ -228,6 +214,11 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       window.setTimeout(() => {
+        if (audioEnabled && soundtrack.paused) {
+          soundtrack.play().catch(() => {
+            audioEnabled = false;
+          });
+        }
         correctDrift(true);
       }, 80);
     }
@@ -248,7 +239,6 @@
           soundtrack.currentTime = Math.max(0, sceneTime);
           soundtrack.play().catch(() => {
             audioEnabled = false;
-            makeSoundPrompt();
           });
         }
       }
